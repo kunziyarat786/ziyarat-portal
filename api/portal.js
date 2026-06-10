@@ -2,15 +2,15 @@ const { google } = require('googleapis');
 const { Readable } = require('stream');
 
 module.exports = async (req, res) => {
-  // Handle preflight OPTIONS requests safely
+  // Safe CORS headers for Vercel environment
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     return res.status(200).end();
   }
 
-  // Ensure it's a POST request
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, msg: "Method Not Allowed" });
   }
@@ -18,7 +18,6 @@ module.exports = async (req, res) => {
   try {
     const { action } = req.body;
 
-    // Fetch credentials securely from Vercel Environment Variables
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
     const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
     
@@ -28,11 +27,13 @@ module.exports = async (req, res) => {
     const CURRENT_CYCLE_START = "2026-05-17"; 
     const NEXT_DATE = "15-06-2026"; 
 
-    // Authenticate with Google API
+    // 🔥 THE 500 ERROR FIX: Automatically repair the private key line breaks
+    const formattedPrivateKey = credentials.private_key.replace(/\\n/g, '\n');
+
     const auth = new google.auth.JWT(
       credentials.client_email,
       null,
-      credentials.private_key,
+      formattedPrivateKey,
       ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
     );
 

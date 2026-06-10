@@ -2,7 +2,6 @@ const { google } = require('googleapis');
 const { Readable } = require('stream');
 
 module.exports = async (req, res) => {
-  // Safe CORS headers for Vercel environment
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -18,7 +17,23 @@ module.exports = async (req, res) => {
   try {
     const { action } = req.body;
 
-    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
+    // --- BULLETPROOF GOOGLE VARIABLE PARSING ---
+    let credentials;
+    try {
+      // If Vercel loads it with accidental enclosing single quotes, strip them out
+      let rawEnv = process.env.GOOGLE_SERVICE_ACCOUNT.trim();
+      if (rawEnv.startsWith("'") && rawEnv.endsWith("'")) {
+        rawEnv = rawEnv.slice(1, -1);
+      }
+      credentials = JSON.parse(rawEnv);
+    } catch (parseError) {
+      return res.status(500).json({ 
+        success: false, 
+        msg: "Vercel Environment Variable Config Error: Could not parse JSON credentials.",
+        error: parseError.message 
+      });
+    }
+
     const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
     
     const FOLDER_ID = "1RHi6VHmvkmHkFD74xoPQl2TTV6oIYWJc"; 
@@ -27,7 +42,7 @@ module.exports = async (req, res) => {
     const CURRENT_CYCLE_START = "2026-05-17"; 
     const NEXT_DATE = "15-06-2026"; 
 
-    // 🔥 THE 500 ERROR FIX: Automatically repair the private key line breaks
+    // Repair private key line breaks explicitly
     const formattedPrivateKey = credentials.private_key.replace(/\\n/g, '\n');
 
     const auth = new google.auth.JWT(
@@ -185,6 +200,6 @@ module.exports = async (req, res) => {
     }
 
   } catch (err) {
-    return res.status(500).json({ success: false, msg: "Server Error: " + err.message });
+    return res.status(500).json({ success: false, msg: "Server Internal Runtime Error: " + err.message });
   }
 };

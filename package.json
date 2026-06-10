@@ -1,0 +1,7 @@
+{
+  "name": "ziyarat-fund-portal",
+  "version": "1.0.0",
+  "dependencies": {
+    "googleapis": "^126.0.0"
+  }
+}

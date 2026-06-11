@@ -91,14 +91,24 @@ module.exports = async (req, res) => {
 
       let expensesData = [], totalSpent = 0;
       try {
-        const expRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Expenses!A:C' });
+        // Expanded range to A:D to capture the Proof Link in Column D
+        const expRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Expenses!A:D' });
+        
         for (let i = 1; i < (expRes.data.values || []).length; i++) {
-          const amt = Number(expRes.data.values[i][2]); if (!isNaN(amt)) totalSpent += amt;
+          const rawExpString = String(expRes.data.values[i][2]).replace(/[^0-9.-]+/g, "");
+          const amt = Number(rawExpString); 
+          if (!isNaN(amt)) totalSpent += amt;
         }
+        
         expensesData = (expRes.data.values || []).slice(1).map(row => {
           const d = safeParseDate(row[0]);
-          return { date: d.getTime() > 0 ? `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}` : row[0], desc: row[1], amount: row[2] };
-        }).reverse().slice(0, 3);
+          return { 
+            date: d.getTime() > 0 ? `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}` : row[0], 
+            desc: row[1], 
+            amount: row[2],
+            proof: row[3] || "" // <--- Captures the Column D Proof Link
+          };
+        }).reverse().slice(0, 3); // Keeps the 3 most recent utilizations
       } catch (e) {}
 
       let hasUploadedPhoto = false, photoUrl = "";

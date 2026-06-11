@@ -52,22 +52,33 @@ module.exports = async (req, res) => {
     const sheets = google.sheets({ version: 'v4', auth });
     const drive = google.drive({ version: 'v3', auth });
 
-    // Helper helper to handle spreadsheet date cells robustly
+    // --- BULLETPROOF DATE PARSER ---
+    // Fixes the 1970 Epoch error by correctly interpreting Indian/UK and ISO date formats
     const safeParseDate = (dateVal) => {
       if (!dateVal) return new Date(0);
-      let d = new Date(dateVal);
-      // Handle alternative regional standard formats like DD/MM/YYYY manually if standard parser fails
-      if (isNaN(d.getTime()) && typeof dateVal === 'string') {
-        const parts = dateVal.split(/[-\/]/);
-        if (parts.length === 3) {
-          // Check if first part looks like day or year
-          if (parts[0].length === 4) {
-            d = new Date(parts[0], parts[1] - 1, parts[2]);
-          } else {
-            d = new Date(parts[2], parts[1] - 1, parts[0]);
-          }
+      
+      // Strip out any time components (e.g. "T14:30:00Z" or " 14:30:00")
+      const strVal = String(dateVal).trim().split('T')[0].split(' ')[0]; 
+
+      let d = new Date(strVal);
+
+      // Explicitly handle DD/MM/YYYY or YYYY-MM-DD
+      const parts = strVal.split(/[\/\-\.]/);
+      if (parts.length === 3) {
+        let day, month, year;
+        if (parts[2].length >= 4) { // Format: DD/MM/YYYY
+          day = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1; // JS Months are 0-indexed
+          year = parseInt(parts[2], 10);
+          d = new Date(year, month, day);
+        } else if (parts[0].length === 4) { // Format: YYYY/MM/DD
+          year = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1;
+          day = parseInt(parts[2], 10);
+          d = new Date(year, month, day);
         }
       }
+
       return isNaN(d.getTime()) ? new Date(0) : d;
     };
 
@@ -100,7 +111,7 @@ module.exports = async (req, res) => {
       for (let i = 1; i < contributions.length; i++) {
         const row = contributions[i];
         if (!row[0] || !row[1]) continue;
-        
+
         const amt = Number(row[4]);
         if (!isNaN(amt)) totalCollected += amt;
 
@@ -218,6 +229,6 @@ module.exports = async (req, res) => {
     }
 
   } catch (err) {
-    return res.status(500).json({ success: false, msg: "Server Error: " + err.message });
+    return res.status(500).json({ success: false, msg: "Server Internal Runtime Error: " + err.message });
   }
 };

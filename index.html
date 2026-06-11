@@ -274,6 +274,24 @@
 
             <div id="adminSection" class="glass-card p-4 border-danger" style="display:none; border-left: 4px solid #dc3545;">
                 <h6 class="text-danger fw-bold traditional-font mb-3">COORDINATOR DASHBOARD</h6>
+                
+                <div class="bg-light p-3 rounded-3 mb-4 border border-danger border-opacity-25">
+                    <small class="fw-bold text-dark d-block mb-2">🗓️ CYCLE MANAGEMENT</small>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="small text-muted" style="font-size:0.7rem;">Cycle Start Date</label>
+                            <input type="text" id="adminCycleStart" class="form-control form-control-sm text-center fw-bold" placeholder="YYYY-MM-DD">
+                        </div>
+                        <div class="col-6">
+                            <label class="small text-muted" style="font-size:0.7rem;">Next Due Date (Display)</label>
+                            <input type="text" id="adminNextDate" class="form-control form-control-sm text-center fw-bold" placeholder="DD-MM-YYYY">
+                        </div>
+                    </div>
+                    <button onclick="updateCycle()" id="updateCycleBtn" class="btn btn-sm btn-outline-danger w-100 fw-bold">
+                        Unlock New Cycle
+                    </button>
+                </div>
+
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <small class="text-muted fw-bold">PENDING MEMBERS</small>
                     <span id="pendingCount" class="badge bg-danger rounded-pill">0</span>
@@ -316,6 +334,32 @@
             document.getElementById('mainContent').style.display = 'none';
             document.getElementById('loginSection').style.display = 'flex';
             document.getElementById('itsInput').value = "";
+        }
+        async function updateCycle() {
+            const newStart = document.getElementById('adminCycleStart').value;
+            const newNext = document.getElementById('adminNextDate').value;
+            
+            if(!newStart || !newNext) return alert("Please enter both dates to update the cycle.");
+            if(!confirm("Are you sure you want to change the cycle dates? This will instantly unlock the form for all members.")) return;
+
+            const btn = document.getElementById('updateCycleBtn');
+            btn.disabled = true;
+            btn.innerText = "Updating Database...";
+
+            try {
+                const res = await callBackend("updateConfig", {
+                    its: currentUser.its,
+                    newStart: newStart,
+                    newNext: newNext
+                });
+                alert(res.msg);
+                if(res.success) login(); // Refresh dashboard to apply changes
+            } catch (err) {
+                alert("Network error updating cycle.");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Unlock New Cycle";
+            }
         }
 
         async function callBackend(action, payload = null) {
@@ -391,6 +435,8 @@
 
                     if(res.isAdmin) {
                         document.getElementById('adminSection').style.display = 'block';
+                        document.getElementById('adminCycleStart').value = res.currentCycleStart || "";
+                        document.getElementById('adminNextDate').value = res.nextDate || "";
                         const pendingCount = res.adminReport.unpaid.length;
                         document.getElementById('pendingCount').innerText = pendingCount;
 

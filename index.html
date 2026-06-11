@@ -152,6 +152,16 @@
             width: 100%;
             color: var(--emerald-primary);
         }
+        .profile-pic {
+            width: 46px; 
+            height: 46px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--gold-accent);
+            box-shadow: 0 4px 10px rgba(212, 175, 55, 0.2);
+            background-color: #f1f5f9;
+            display: none; /* Hidden by default if no photo exists */
+        }
     </style>
 </head>
 <body>
@@ -175,10 +185,13 @@
         </div>
 
         <div id="mainContent" style="display:none; padding-top: 20px;">
-            <div class="d-flex justify-content-between align-items-center mb-3 px-2">
-                <div>
-                    <small class="text-muted d-block">Welcome back,</small>
-                    <span id="welcomeMsg" class="fw-bold traditional-font fs-5"></span>
+            <div class="d-flex justify-content-between align-items-center mb-4 px-2">
+                <div class="d-flex align-items-center gap-3">
+                    <img id="profilePicImg" src="" alt="Profile" class="profile-pic">
+                    <div>
+                        <small class="text-muted d-block" style="line-height: 1;">Welcome back,</small>
+                        <span id="welcomeMsg" class="fw-bold traditional-font fs-5"></span>
+                    </div>
                 </div>
                 <button onclick="logout()" class="logout-btn" title="Logout">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
@@ -374,6 +387,15 @@
             });
             return await response.json();
         }
+        // Safely convert Google Drive webViewLink into a direct image thumbnail
+        function getDriveThumbnail(url) {
+            if (!url) return '';
+            const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+            if (match && match[1]) {
+                return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w150`;
+            }
+            return url;
+        }
 
         async function login() {
             const its = document.getElementById('itsInput').value;
@@ -394,6 +416,13 @@
                     document.getElementById('loginSection').style.display = 'none';
                     document.getElementById('mainContent').style.display = 'block';
                     document.getElementById('welcomeMsg').innerText = res.user.name;
+                    const profileImg = document.getElementById('profilePicImg');
+                    if (res.hasUploadedPhoto && res.photoUrl) {
+                        profileImg.src = getDriveThumbnail(res.photoUrl);
+                        profileImg.style.display = 'block';
+                    } else {
+                        profileImg.style.display = 'none';
+                    }
                     
                     const balanceDisplay = document.getElementById('animatedBalance');
                     animateValue(balanceDisplay, 0, res.balance, 1500);

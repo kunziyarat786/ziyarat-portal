@@ -160,7 +160,26 @@
             border: 2px solid var(--gold-accent);
             box-shadow: 0 4px 10px rgba(212, 175, 55, 0.2);
             background-color: #f1f5f9;
-            display: none; /* Hidden by default if no photo exists */
+            display: none; 
+        }
+        
+        /* Modal Custom Styles */
+        .proof-modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 1050;
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .proof-modal-container {
+            width: 100%; max-width: 600px;
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            max-height: 90vh;
         }
     </style>
 </head>
@@ -325,6 +344,17 @@
         </div>
     </div>
 
+    <div id="proofModal" class="proof-modal-overlay" style="display:none;">
+        <div class="proof-modal-container">
+            <div class="d-flex justify-content-between align-items-center p-3 border-bottom bg-light">
+                <h5 class="traditional-font mb-0 fs-6 text-dark">Araz Photos & Utilization</h5>
+                <button onclick="closeProofModal()" class="btn-close" aria-label="Close"></button>
+            </div>
+            <div id="modalImageContainer" class="p-3 d-flex flex-column gap-3 overflow-auto" style="background-color: #f8fafc;">
+                </div>
+        </div>
+    </div>
+
     <script>
         const API_URL = "/api/portal";
         let currentUser = {};
@@ -348,6 +378,7 @@
             document.getElementById('loginSection').style.display = 'flex';
             document.getElementById('itsInput').value = "";
         }
+        
         async function updateCycle() {
             const newStart = document.getElementById('adminCycleStart').value;
             const newNext = document.getElementById('adminNextDate').value;
@@ -387,19 +418,63 @@
             });
             return await response.json();
         }
-        // Safely convert Google Drive webViewLink into a direct image thumbnail
-        // Safely extract Google Drive ID from ANY link format (Forms or Portal)
+
+        // Safely extract Google Drive ID from ANY link format
         function getDriveThumbnail(url) {
             if (!url) return '';
-            
-            // This regex catches both "/d/ID" (New Portal) and "?id=ID" (Old Google Forms)
             const match = url.match(/(?:id=|\/d\/)([\w-]+)/);
-            
             if (match && match[1]) {
                 return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w150`;
             }
             return url;
         }
+
+        // Convert Google Drive link to direct full-size image link
+        function getDirectDriveLink(url) {
+            const trimmedUrl = url.trim();
+            const match = trimmedUrl.match(/(?:id=|\/d\/)([\w-]+)/);
+            if (match && match[1]) {
+                return `https://drive.google.com/uc?export=view&id=${match[1]}`;
+            }
+            return trimmedUrl; 
+        }
+
+        // Open Modal logic for Araz Photos
+        function openProofModal(proofLinksString) {
+            const modal = document.getElementById('proofModal');
+            const container = document.getElementById('modalImageContainer');
+            
+            container.innerHTML = ''; // Clear previous images
+            const links = proofLinksString.split(',');
+            
+            links.forEach(link => {
+                if(link.trim() !== "") {
+                    const directUrl = getDirectDriveLink(link);
+                    const imgElement = document.createElement('img');
+                    imgElement.src = directUrl;
+                    imgElement.alt = "Araz Collage";
+                    imgElement.className = "img-fluid rounded shadow-sm border bg-white";
+                    container.appendChild(imgElement);
+                }
+            });
+            
+            modal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeProofModal() {
+            const modal = document.getElementById('proofModal');
+            modal.style.display = 'none';
+            document.body.style.overflow = 'auto';
+            setTimeout(() => { document.getElementById('modalImageContainer').innerHTML = ''; }, 300);
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('proofModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeProofModal();
+            }
+        });
 
         async function login() {
             const its = document.getElementById('itsInput').value;
@@ -420,6 +495,7 @@
                     document.getElementById('loginSection').style.display = 'none';
                     document.getElementById('mainContent').style.display = 'block';
                     document.getElementById('welcomeMsg').innerText = res.user.name;
+                    
                     const profileImg = document.getElementById('profilePicImg');
                     if (res.hasUploadedPhoto && res.photoUrl) {
                         profileImg.src = getDriveThumbnail(res.photoUrl);
@@ -446,12 +522,25 @@
                     if(res.recentExpenses && res.recentExpenses.length > 0) {
                         document.getElementById('expenseSection').style.display = 'block';
                         const expHtml = res.recentExpenses.map(item => `
-                            <div class="d-flex justify-content-between align-items-center p-2 border-bottom">
-                                <div>
-                                    <div class="fw-bold text-dark" style="font-size: 0.9rem;">${item.desc}</div>
-                                    <div class="small text-muted">${item.date}</div>
+                            <div class="p-2 border-bottom">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <div>
+                                        <div class="fw-bold text-dark" style="font-size: 0.9rem;">${item.desc}</div>
+                                        <div class="small text-muted">${item.date}</div>
+                                    </div>
+                                    <div class="fw-bold text-danger">- ₹${item.amount.toLocaleString()}</div>
                                 </div>
-                                <div class="fw-bold text-danger">- ₹${item.amount.toLocaleString()}</div>
+                                ${item.proof_link ? `
+                                <div class="mt-2">
+                                    <button onclick="openProofModal('${item.proof_link}')" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" style="font-size: 0.75rem; border-radius: 8px;">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+                                            <path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/>
+                                            <path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8zm8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>
+                                        </svg>
+                                        View Araz Photos
+                                    </button>
+                                </div>
+                                ` : ''}
                             </div>
                         `).join('');
                         document.getElementById('expenseList').innerHTML = expHtml;
@@ -562,5 +651,6 @@
             reader.readAsDataURL(file);
         };
     </script>
+    
 </body>
 </html>

@@ -17,10 +17,8 @@ module.exports = async (req, res) => {
   try {
     const { action } = req.body;
 
-    // --- BULLETPROOF GOOGLE VARIABLE PARSING ---
     let credentials;
     try {
-      // If Vercel loads it with accidental enclosing single quotes, strip them out
       let rawEnv = process.env.GOOGLE_SERVICE_ACCOUNT.trim();
       if (rawEnv.startsWith("'") && rawEnv.endsWith("'")) {
         rawEnv = rawEnv.slice(1, -1);
@@ -42,7 +40,6 @@ module.exports = async (req, res) => {
     const CURRENT_CYCLE_START = "2026-05-17"; 
     const NEXT_DATE = "15-06-2026"; 
 
-    // Repair private key line breaks explicitly
     const formattedPrivateKey = credentials.private_key.replace(/\\n/g, '\n');
 
     const auth = new google.auth.JWT(
@@ -54,6 +51,25 @@ module.exports = async (req, res) => {
 
     const sheets = google.sheets({ version: 'v4', auth });
     const drive = google.drive({ version: 'v3', auth });
+
+    // Helper helper to handle spreadsheet date cells robustly
+    const safeParseDate = (dateVal) => {
+      if (!dateVal) return new Date(0);
+      let d = new Date(dateVal);
+      // Handle alternative regional standard formats like DD/MM/YYYY manually if standard parser fails
+      if (isNaN(d.getTime()) && typeof dateVal === 'string') {
+        const parts = dateVal.split(/[-\/]/);
+        if (parts.length === 3) {
+          // Check if first part looks like day or year
+          if (parts[0].length === 4) {
+            d = new Date(parts[0], parts[1] - 1, parts[2]);
+          } else {
+            d = new Date(parts[2], parts[1] - 1, parts[0]);
+          }
+        }
+      }
+      return isNaN(d.getTime()) ? new Date(0) : d;
+    };
 
     // --- ROUTE: LOGIN USER ---
     if (action === 'login') {
@@ -74,7 +90,7 @@ module.exports = async (req, res) => {
       const contribsRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Contributions!A:F' });
       const contributions = contribsRes.data.values || [];
       
-      const cycleStart = new Date(CURRENT_CYCLE_START);
+      const cycleStart = safeParseDate(CURRENT_CYCLE_START);
       cycleStart.setHours(0,0,0,0);
 
       let hasPaidThisCycle = false;
@@ -83,15 +99,16 @@ module.exports = async (req, res) => {
 
       for (let i = 1; i < contributions.length; i++) {
         const row = contributions[i];
+        if (!row[0] || !row[1]) continue;
+        
         const amt = Number(row[4]);
         if (!isNaN(amt)) totalCollected += amt;
 
-        if (row[1] && row[1].toString().trim() === its) {
-          const paymentDate = new Date(row[0]);
+        if (row[1].toString().trim() === its) {
+          const paymentDate = safeParseDate(row[0]);
           if (paymentDate >= cycleStart) hasPaidThisCycle = true;
 
-          const d = new Date(row[0]);
-          const formattedDate = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+          const formattedDate = `${String(paymentDate.getDate()).padStart(2, '0')}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}-${paymentDate.getFullYear()}`;
           userHistory.push({ date: formattedDate, amount: row[4], link: row[5] });
         }
       }
@@ -106,9 +123,10 @@ module.exports = async (req, res) => {
           if (!isNaN(amt)) totalSpent += amt;
         }
         expensesData = expRows.slice(1).map(row => {
-          const d = new Date(row[0]);
+          const d = safeParseDate(row[0]);
+          const formattedExpDate = d.getTime() > 0 ? `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}` : row[0];
           return {
-            date: !isNaN(d) ? `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}` : row[0],
+            date: formattedExpDate,
             desc: row[1],
             amount: row[2]
           };
@@ -140,7 +158,7 @@ module.exports = async (req, res) => {
           let foundPaid = false;
           for (let j = 1; j < contributions.length; j++) {
             if (contributions[j][1] && contributions[j][1].toString().trim() === mIts) {
-              if (new Date(contributions[j][0]) >= cycleStart) { foundPaid = true; break; }
+              if (safeParseDate(contributions[j][0]) >= cycleStart) { foundPaid = true; break; }
             }
           }
           if (foundPaid) paid.push(mName); else unpaid.push(mName);
@@ -200,6 +218,6 @@ module.exports = async (req, res) => {
     }
 
   } catch (err) {
-    return res.status(500).json({ success: false, msg: "Server Internal Runtime Error: " + err.message });
+    return res.status(500).json({ success: false, msg: "Server Error: " + err.message });
   }
 };

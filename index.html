@@ -388,9 +388,13 @@
             return await response.json();
         }
         // Safely convert Google Drive webViewLink into a direct image thumbnail
+        // Safely extract Google Drive ID from ANY link format (Forms or Portal)
         function getDriveThumbnail(url) {
             if (!url) return '';
-            const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+            
+            // This regex catches both "/d/ID" (New Portal) and "?id=ID" (Old Google Forms)
+            const match = url.match(/(?:id=|\/d\/)([\w-]+)/);
+            
             if (match && match[1]) {
                 return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w150`;
             }

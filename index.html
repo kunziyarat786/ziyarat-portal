@@ -444,8 +444,12 @@
                     }
 
                     // Example rendering loop for Recent Expenses / Utilizations
-                    const expensesContainer = document.getElementById('recentExpensesContainer');
+                    const expensesContainer = document.getElementById('expenseList');
                     expensesContainer.innerHTML = ''; // Clear container
+                    // Add this line to make the section visible!
+                    if (res.recentExpenses && res.recentExpenses.length > 0) {
+                        document.getElementById('expenseSection').style.display = 'block';
+                    }
 
                     res.recentExpenses.forEach(exp => {
                         let proofHtml = '';

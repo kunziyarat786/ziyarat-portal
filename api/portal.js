@@ -12,25 +12,17 @@ module.exports = async (req, res) => {
   try {
     const { action } = req.body;
 
-    let credentials;
-    try {
-      let rawEnv = process.env.GOOGLE_SERVICE_ACCOUNT.trim();
-      if (rawEnv.startsWith("'") && rawEnv.endsWith("'")) rawEnv = rawEnv.slice(1, -1);
-      credentials = JSON.parse(rawEnv);
-    } catch (parseError) {
-      return res.status(500).json({ success: false, msg: "Config Error: Could not parse credentials." });
-    }
-
     const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
     const FOLDER_ID = "1RHi6VHmvkmHkFD74xoPQl2TTV6oIYWJc"; 
     const PHOTO_FOLDER_ID = "1dgmfiePaaUpd_3YnQ3bmkLLKa04-ttWGhMfvsCnXye0w6ZqmjaAW_JDWwnhvHeYDSp2tAweS"; 
     const ADMIN_ITS = ["30366830", "30490731"]; 
 
-    const formattedPrivateKey = credentials.private_key.replace(/\\n/g, '\n');
-    const auth = new google.auth.JWT(
-      credentials.client_email, null, formattedPrivateKey,
-      ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+    // --- NEW OAUTH2 AUTHENTICATION (Human Owner Mode) ---
+    const auth = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
     );
+    auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
 
     const sheets = google.sheets({ version: 'v4', auth });
     const drive = google.drive({ version: 'v3', auth });
@@ -55,16 +47,15 @@ module.exports = async (req, res) => {
     };
 
     // --- DYNAMIC CONFIG FETCH ---
-    let CURRENT_CYCLE_START = "2026-05-17"; // Fallback
-    let NEXT_DATE = "15-06-2026"; // Fallback
+    let CURRENT_CYCLE_START = "2026-05-17"; 
+    let NEXT_DATE = "15-06-2026"; 
     try {
       const configRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Config!A:B' });
-      const configData = configRes.data.values || [];
-      for (const row of configData) {
+      for (const row of configRes.data.values || []) {
         if (row[0] === 'CURRENT_CYCLE_START' && row[1]) CURRENT_CYCLE_START = row[1];
         if (row[0] === 'NEXT_DATE' && row[1]) NEXT_DATE = row[1];
       }
-    } catch(e) { console.error("Config tab not found, using fallbacks."); }
+    } catch(e) {}
 
     // --- ROUTE: LOGIN USER ---
     if (action === 'login') {
@@ -81,17 +72,14 @@ module.exports = async (req, res) => {
       if (!user) return res.status(200).json({ success: false, msg: "ITS number not recognized." });
 
       const contribsRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Contributions!A:F' });
-      const contributions = contribsRes.data.values || [];
-      const cycleStart = safeParseDate(CURRENT_CYCLE_START);
-      cycleStart.setHours(0,0,0,0);
+      const cycleStart = safeParseDate(CURRENT_CYCLE_START); cycleStart.setHours(0,0,0,0);
 
       let hasPaidThisCycle = false, totalCollected = 0, userHistory = [];
 
-      for (let i = 1; i < contributions.length; i++) {
-        const row = contributions[i];
+      for (let i = 1; i < (contribsRes.data.values || []).length; i++) {
+        const row = contribsRes.data.values[i];
         if (!row[0] || !row[1]) continue;
-        const amt = Number(row[4]);
-        if (!isNaN(amt)) totalCollected += amt;
+        const amt = Number(row[4]); if (!isNaN(amt)) totalCollected += amt;
 
         if (row[1].toString().trim() === its) {
           const paymentDate = safeParseDate(row[0]);
@@ -104,16 +92,12 @@ module.exports = async (req, res) => {
       let expensesData = [], totalSpent = 0;
       try {
         const expRes = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Expenses!A:C' });
-        const expRows = expRes.data.values || [];
-        for (let i = 1; i < expRows.length; i++) {
-          const amt = Number(expRows[i][2]); if (!isNaN(amt)) totalSpent += amt;
+        for (let i = 1; i < (expRes.data.values || []).length; i++) {
+          const amt = Number(expRes.data.values[i][2]); if (!isNaN(amt)) totalSpent += amt;
         }
-        expensesData = expRows.slice(1).map(row => {
+        expensesData = (expRes.data.values || []).slice(1).map(row => {
           const d = safeParseDate(row[0]);
-          return {
-            date: d.getTime() > 0 ? `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}` : row[0],
-            desc: row[1], amount: row[2]
-          };
+          return { date: d.getTime() > 0 ? `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}` : row[0], desc: row[1], amount: row[2] };
         }).reverse().slice(0, 3);
       } catch (e) {}
 
@@ -137,9 +121,9 @@ module.exports = async (req, res) => {
         for (let i = 1; i < members.length; i++) {
           const mIts = members[i][0].toString().trim(), mName = members[i][1];
           let foundPaid = false;
-          for (let j = 1; j < contributions.length; j++) {
-            if (contributions[j][1] && contributions[j][1].toString().trim() === mIts) {
-              if (safeParseDate(contributions[j][0]) >= cycleStart) { foundPaid = true; break; }
+          for (let j = 1; j < (contribsRes.data.values || []).length; j++) {
+            if (contribsRes.data.values[j][1] && contribsRes.data.values[j][1].toString().trim() === mIts) {
+              if (safeParseDate(contribsRes.data.values[j][0]) >= cycleStart) { foundPaid = true; break; }
             }
           }
           if (foundPaid) paid.push(mName); else unpaid.push(mName);
@@ -151,23 +135,16 @@ module.exports = async (req, res) => {
         success: true, user, history: userHistory, isAdmin: ADMIN_ITS.includes(its),
         adminReport, hasPaid: hasPaidThisCycle, nextDate: NEXT_DATE,
         totalCollected, totalSpent, balance: totalCollected - totalSpent,
-        recentExpenses: expensesData, hasUploadedPhoto, photoUrl,
-        // Send current config dates down to the frontend for the Admin UI
-        currentCycleStart: CURRENT_CYCLE_START 
+        recentExpenses: expensesData, hasUploadedPhoto, photoUrl, currentCycleStart: CURRENT_CYCLE_START 
       });
     }
 
-    // --- NEW ROUTE: UPDATE CONFIG DATES (ADMIN ONLY) ---
     if (action === 'updateConfig') {
       const payload = req.body.payload;
       if (!ADMIN_ITS.includes(payload.its.toString())) return res.status(403).json({ success: false, msg: "Unauthorized." });
-      
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID, range: 'Config!A1:B2', valueInputOption: 'USER_ENTERED',
-        resource: { values: [
-          ['CURRENT_CYCLE_START', payload.newStart],
-          ['NEXT_DATE', payload.newNext]
-        ]}
+        resource: { values: [['CURRENT_CYCLE_START', payload.newStart], ['NEXT_DATE', payload.newNext]]}
       });
       return res.status(200).json({ success: true, msg: "Cycle dates updated! Portal is now unlocked for the new month." });
     }
